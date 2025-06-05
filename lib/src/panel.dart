@@ -47,7 +47,7 @@ class SlidingUpPanel extends StatefulWidget {
 
   /// Optional persistent widget that floats above the [panel] and attaches
   /// to the top of the [panel]. Content at the top of the panel will be covered
-  /// by this widget. Add padding to the bottom of the `panel` to
+  /// by this widget. Add padding to the top of the `panel` to
   /// avoid coverage.
   final Widget? header;
 
@@ -211,6 +211,7 @@ class _SlidingUpPanelState extends State<SlidingUpPanel>
   late ScrollController _sc;
 
   bool _scrollingEnabled = false;
+  bool _scrollingOuter = true;
   VelocityTracker _vt = new VelocityTracker.withKind(PointerDeviceKind.touch);
 
   bool _isPanelVisible = true;
@@ -240,7 +241,7 @@ class _SlidingUpPanelState extends State<SlidingUpPanel>
     // draggable and panel scrolling is enabled
     _sc = new ScrollController();
     _sc.addListener(() {
-      if (widget.isDraggable && !_scrollingEnabled) _sc.jumpTo(0);
+      if (widget.isDraggable && !_scrollingEnabled) _sc.jumpTo(_sc.offset);
     });
 
     widget.controller?._addState(this);
@@ -420,6 +421,7 @@ class _SlidingUpPanelState extends State<SlidingUpPanel>
 
   @override
   void dispose() {
+    _sc.dispose();
     _ac.dispose();
     super.dispose();
   }
@@ -453,8 +455,18 @@ class _SlidingUpPanelState extends State<SlidingUpPanel>
     }
 
     return Listener(
-      onPointerDown: (PointerDownEvent p) =>
-          _vt.addPosition(p.timeStamp, p.position),
+      onPointerDown: (PointerDownEvent p) {
+        final localPosition = p.localPosition;
+        final globalPosition = p.position;
+        if (localPosition.dy <= widget.minHeight) {
+          _scrollingOuter = true;
+          _scrollingEnabled = false;
+        } else {
+          _scrollingEnabled = true;
+          _scrollingOuter = false;
+        }
+        _vt.addPosition(p.timeStamp, p.position);
+      },
       onPointerMove: (PointerMoveEvent p) {
         _vt.addPosition(p.timeStamp,
             p.position); // add current position for velocity tracking
@@ -468,25 +480,35 @@ class _SlidingUpPanelState extends State<SlidingUpPanel>
   // handles the sliding gesture
   void _onGestureSlide(double dy) {
     // only slide the panel if scrolling is not enabled
-    if (!_scrollingEnabled) {
+    if (_scrollingOuter ||
+        !_isPanelOpen ||
+        _sc.hasClients && dy >= 0 && _sc.offset <= 0) {
+      _scrollingEnabled = false;
       if (widget.slideDirection == SlideDirection.UP)
         _ac.value -= dy / (widget.maxHeight - widget.minHeight);
       else
         _ac.value += dy / (widget.maxHeight - widget.minHeight);
+      return;
+    }
+
+    if (!_scrollingEnabled) {
+      _scrollingEnabled = true;
     }
 
     // if the panel is open and the user hasn't scrolled, we need to determine
     // whether to enable scrolling if the user swipes up, or disable closing and
     // begin to close the panel if the user swipes down
-    if (_isPanelOpen && _sc.hasClients && _sc.offset <= 0) {
-      setState(() {
-        if (dy < 0) {
-          _scrollingEnabled = true;
-        } else {
-          _scrollingEnabled = false;
-        }
-      });
-    }
+    // if (_scrollingEnabled != true) {
+    //   setState(() {
+    //     _scrollingEnabled = true;
+    //   });
+    // }
+
+    // if (_sc.hasClients && dy >= 0 && _sc.offset <= 0) {
+    //   setState(() {
+    //     _scrollingEnabled = false;
+    //   });
+    // }
   }
 
   // handles when user stops sliding
